@@ -145,8 +145,27 @@ namespace Umbraco.Core.PropertyEditors
         /// <returns></returns>
         internal Attempt<object> TryConvertValueToCrlType(object value)
         {
-            if (value is JValue)
-                value = value.ToString();
+            if (value is JValue jsonValue)
+            {
+                // Calling the "ToString(Formatting)" method on a string value results in a new
+                // string enclosed in double quotes (which we don't want), as the method is declared
+                // in the JToken class. Calling either of the "ToString()" or "ToString(CultureInfo)"
+                // methods hits the overridden methods in the JValue class, which correctly doesn't
+                // enclose the value in double quotes.
+                value = jsonValue.ToString(CultureInfo.InvariantCulture);
+            }
+            else if (value is JToken jsonToken)
+            {
+                if (jsonToken is JContainer && jsonToken.HasValues == false)
+                {
+                    // Empty JSON array/object
+                    value = null;
+                }
+                else
+                {
+                    value = jsonToken.ToString(Formatting.None);
+                }
+            }
 
             //this is a custom check to avoid any errors, if it's a string and it's empty just make it null
             if (value is string s && string.IsNullOrWhiteSpace(s))
@@ -187,6 +206,7 @@ namespace Umbraco.Core.PropertyEditors
                 default:
                     throw new ArgumentOutOfRangeException();
             }
+
             return value.TryConvertTo(valueType);
         }
 
@@ -222,6 +242,7 @@ namespace Umbraco.Core.PropertyEditors
                 Current.Logger.Warn<DataValueEditor,object,ValueStorageType>("The value {EditorValue} cannot be converted to the type {StorageTypeValue}", editorValue.Value, ValueTypes.ToStorageType(ValueType));
                 return null;
             }
+
             return result.Result;
         }
 

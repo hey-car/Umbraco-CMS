@@ -29,13 +29,13 @@ namespace Umbraco.Tests.PropertyEditors
     {
         private const string CropperJson1 = "{\"focalPoint\": {\"left\": 0.96,\"top\": 0.80827067669172936},\"src\": \"/media/1005/img_0671.jpg\",\"crops\": [{\"alias\":\"thumb\",\"width\": 100,\"height\": 100,\"coordinates\": {\"x1\": 0.58729977382575338,\"y1\": 0.055768992440203169,\"x2\": 0,\"y2\": 0.32457553600198386}}]}";
         private const string CropperJson2 = "{\"focalPoint\": {\"left\": 0.98,\"top\": 0.80827067669172936},\"src\": \"/media/1005/img_0672.jpg\",\"crops\": [{\"alias\":\"thumb\",\"width\": 100,\"height\": 100,\"coordinates\": {\"x1\": 0.58729977382575338,\"y1\": 0.055768992440203169,\"x2\": 0,\"y2\": 0.32457553600198386}}]}";
-        private const string CropperJson3 = "{\"focalPoint\": {\"left\": 0.98,\"top\": 0.80827067669172936},\"src\": \"/media/1005/img_0672.jpg\",\"crops\": []}";
+        private const string CropperJson3 = "{\"focalPoint\": {\"left\": 0.5,\"top\": 0.5},\"src\": \"/media/1005/img_0672.jpg\",\"crops\": []}";
         private const string MediaPath = "/media/1005/img_0671.jpg";
 
         [Test]
         public void CanConvertImageCropperDataSetSrcToString()
         {
-            //cropperJson3 - has not crops
+            //cropperJson3 - has no crops
             var cropperValue = CropperJson3.DeserializeImageCropperValue();
             var serialized = cropperValue.TryConvertTo<string>();
             Assert.IsTrue(serialized.Success);
@@ -45,7 +45,7 @@ namespace Umbraco.Tests.PropertyEditors
         [Test]
         public void CanConvertImageCropperDataSetJObject()
         {
-            //cropperJson3 - has not crops
+            //cropperJson3 - has no crops
             var cropperValue = CropperJson3.DeserializeImageCropperValue();
             var serialized = cropperValue.TryConvertTo<JObject>();
             Assert.IsTrue(serialized.Success);
@@ -82,8 +82,20 @@ namespace Umbraco.Tests.PropertyEditors
 
                 var mediaFileSystem = new MediaFileSystem(Mock.Of<IFileSystem>(), config, scheme, logger);
 
+                var imageCropperConfiguration = new ImageCropperConfiguration()
+                {
+                    Crops = new[]
+                    {
+                        new ImageCropperConfiguration.Crop()
+                        {
+                            Alias = "thumb",
+                            Width = 100,
+                            Height = 100
+                        }
+                    }
+                };
                 var dataTypeService = new TestObjects.TestDataTypeService(
-                    new DataType(new ImageCropperPropertyEditor(Mock.Of<ILogger>(), mediaFileSystem, Mock.Of<IContentSection>(), Mock.Of<IDataTypeService>())) { Id = 1 });
+                    new DataType(new ImageCropperPropertyEditor(Mock.Of<ILogger>(), mediaFileSystem, Mock.Of<IContentSection>(), Mock.Of<IDataTypeService>())) { Id = 1, Configuration = imageCropperConfiguration });
 
                 var factory = new PublishedContentTypeFactory(Mock.Of<IPublishedModelFactory>(), new PropertyValueConverterCollection(Array.Empty<IPropertyValueConverter>()), dataTypeService);
 

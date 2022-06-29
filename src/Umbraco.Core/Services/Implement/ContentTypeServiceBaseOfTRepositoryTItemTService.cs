@@ -67,7 +67,8 @@ namespace Umbraco.Core.Services.Implement
 
             var compositionAliases = compositionContentType.CompositionAliases();
             var compositions = allContentTypes.Where(x => compositionAliases.Any(y => x.Alias.Equals(y)));
-            var propertyTypeAliases = compositionContentType.PropertyTypes.Select(x => x.Alias.ToLowerInvariant()).ToArray();
+            var propertyTypeAliases = compositionContentType.PropertyTypes.Select(x => x.Alias).ToArray();
+            var propertyGroupAliases = compositionContentType.PropertyGroups.ToDictionary(x => x.Alias, x => x.Type, StringComparer.InvariantCultureIgnoreCase);
             var indirectReferences = allContentTypes.Where(x => x.ContentTypeComposition.Any(y => y.Id == compositionContentType.Id));
             var comparer = new DelegateEqualityComparer<IContentTypeComposition>((x, y) => x.Id == y.Id, x => x.Id);
             var dependencies = new HashSet<IContentTypeComposition>(compositions, comparer);
@@ -96,15 +97,22 @@ namespace Umbraco.Core.Services.Implement
                     stack.Push(c);
             }
 
+            var duplicatePropertyTypeAliases = new List<string>();
+            var invalidPropertyGroupAliases = new List<string>();
+
             foreach (var dependency in dependencies)
             {
                 if (dependency.Id == compositionContentType.Id) continue;
                 var contentTypeDependency = allContentTypes.FirstOrDefault(x => x.Alias.Equals(dependency.Alias, StringComparison.InvariantCultureIgnoreCase));
                 if (contentTypeDependency == null) continue;
-                var intersect = contentTypeDependency.PropertyTypes.Select(x => x.Alias.ToLowerInvariant()).Intersect(propertyTypeAliases).ToArray();
-                if (intersect.Length == 0) continue;
 
-                throw new InvalidCompositionException(compositionContentType.Alias, intersect.ToArray());
+                duplicatePropertyTypeAliases.AddRange(contentTypeDependency.PropertyTypes.Select(x => x.Alias).Intersect(propertyTypeAliases, StringComparer.InvariantCultureIgnoreCase));
+                invalidPropertyGroupAliases.AddRange(contentTypeDependency.PropertyGroups.Where(x => propertyGroupAliases.TryGetValue(x.Alias, out var type) && type != x.Type).Select(x => x.Alias));
+            }
+
+            if (duplicatePropertyTypeAliases.Count > 0 || invalidPropertyGroupAliases.Count > 0)
+            {
+                throw new InvalidCompositionException(compositionContentType.Alias, null, duplicatePropertyTypeAliases.Distinct().ToArray(), invalidPropertyGroupAliases.Distinct().ToArray());
             }
         }
 
@@ -696,7 +704,29 @@ namespace Umbraco.Core.Services.Implement
                     }
 
                     copy.ParentId = containerId;
+                    var saveEventArgs = new SaveEventArgs<TItem>(copy);
+                    if (OnSavingCancelled(scope, saveEventArgs))
+                    {
+                        scope.Complete();
+                        return OperationResult.Attempt.Fail<MoveOperationStatusType, TItem>(MoveOperationStatusType.FailedCancelledByEvent, evtMsgs); // causes rollback
+                    }
+
                     Repository.Save(copy);
+
+                    // handle events for the copied node
+                    // figure out impacted content types
+                    var changes = ComposeContentTypeChanges(copy).ToArray();
+                    var args = changes.ToEventArgs();
+
+                    OnUowRefreshedEntity(args);
+
+                    OnChanged(scope, args);
+                    saveEventArgs.CanCancel = false;
+                    OnSaved(scope, saveEventArgs);
+
+                    // Since this overload doesn't accept a user id, set the super users.
+                    Audit(AuditType.Save, Constants.Security.SuperUserId, copy.Id);
+
                     scope.Complete();
                 }
                 catch (DataOperationException<MoveOperationStatusType> ex)

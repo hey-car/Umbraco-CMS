@@ -103,8 +103,8 @@ namespace Umbraco.Core.Persistence
 
             if (string.IsNullOrWhiteSpace(programFiles)) return;
 
-            // detect 14, 13, 12, 11
-            for (var i = 14; i > 10; i--)
+            // detect (17, 16) 15, 14, 13, 12, 11 - future-proofing by a couple of versions
+            for (var i = 17; i > 10; i--)
             {
                 var exe = Path.Combine(programFiles, $@"Microsoft SQL Server\{i}0\Tools\Binn\SqlLocalDB.exe");
                 if (File.Exists(exe) == false) continue;
@@ -901,7 +901,7 @@ namespace Umbraco.Core.Persistence
                 return -1;
             }
 
-            var p = new Process
+            using (var p = new Process
             {
                 StartInfo =
                 {
@@ -913,13 +913,16 @@ namespace Umbraco.Core.Persistence
                     CreateNoWindow = true,
                     WindowStyle = ProcessWindowStyle.Hidden
                 }
-            };
-            p.Start();
-            output = p.StandardOutput.ReadToEnd();
-            error = p.StandardError.ReadToEnd();
-            p.WaitForExit();
+            })
+            {
+                p.Start();
+                output = p.StandardOutput.ReadToEnd();
+                error = p.StandardError.ReadToEnd();
+                p.WaitForExit();
 
-            return p.ExitCode;
+                return p.ExitCode;
+            }
+           
         }
 
         /// <summary>

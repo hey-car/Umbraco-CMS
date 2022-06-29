@@ -433,10 +433,18 @@ namespace Umbraco.Web.PublishedCache.NuCache
                 refreshedIdsA.Contains(x.ContentTypeId) &&
                 BuildKit(x, out _)))
             {
-                // replacing the node: must preserve the parents
+                // replacing the node: must preserve the relations
                 var node = GetHead(_contentNodes, kit.Node.Id)?.Value;
                 if (node != null)
+                {
+                    // Preserve children
                     kit.Node.FirstChildContentId = node.FirstChildContentId;
+                    kit.Node.LastChildContentId = node.LastChildContentId;
+
+                    // Also preserve siblings
+                    kit.Node.NextSiblingContentId = node.NextSiblingContentId;
+                    kit.Node.PreviousSiblingContentId = node.PreviousSiblingContentId;
+                }
 
                 SetValueLocked(_contentNodes, kit.Node.Id, kit.Node);
 
@@ -717,7 +725,7 @@ namespace Umbraco.Web.PublishedCache.NuCache
                     previousNode = null; // there is no previous sibling
                 }
 
-                _logger.Debug<ContentStore>($"Set {thisNode.Id} with parent {thisNode.ParentContentId}");
+                _logger.Debug<ContentStore>("Set {Id} with parent {ParentContentId}", thisNode.Id, thisNode.ParentContentId);
                 SetValueLocked(_contentNodes, thisNode.Id, thisNode);
 
                 // if we are initializing from the database source ensure the local db is updated

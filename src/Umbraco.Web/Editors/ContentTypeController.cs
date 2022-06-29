@@ -284,9 +284,9 @@ namespace Umbraco.Web.Editors
 
         public DocumentTypeDisplay PostSave(DocumentTypeSave contentTypeSave)
         {
-            //Before we send this model into this saving/mapping pipeline, we need to do some cleanup on variations.	
-            //If the doc type does not allow content variations, we need to update all of it's property types to not allow this either	
-            //else we may end up with ysods. I'm unsure if the service level handles this but we'll make sure it is updated here	
+            //Before we send this model into this saving/mapping pipeline, we need to do some cleanup on variations.
+            //If the doc type does not allow content variations, we need to update all of it's property types to not allow this either
+            //else we may end up with ysods. I'm unsure if the service level handles this but we'll make sure it is updated here
             if (!contentTypeSave.AllowCultureVariant)
             {
                 foreach (var prop in contentTypeSave.Groups.SelectMany(x => x.Properties))
@@ -301,16 +301,16 @@ namespace Umbraco.Web.Editors
                 saveContentType: type => Services.ContentTypeService.Save(type),
                 beforeCreateNew: ctSave =>
                 {
-                    //create a default template if it doesn't exist -but only if default template is == to the content type	
+                    //create a default template if it doesn't exist -but only if default template is == to the content type
                     if (ctSave.DefaultTemplate.IsNullOrWhiteSpace() == false && ctSave.DefaultTemplate == ctSave.Alias)
                     {
                         var template = CreateTemplateForContentType(ctSave.Alias, ctSave.Name);
 
-                        // If the alias has been manually updated before the first save,	
-                        // make sure to also update the first allowed template, as the	
-                        // name will come back as a SafeAlias of the document type name,	
-                        // not as the actual document type alias.	
-                        // For more info: http://issues.umbraco.org/issue/U4-11059	
+                        // If the alias has been manually updated before the first save,
+                        // make sure to also update the first allowed template, as the
+                        // name will come back as a SafeAlias of the document type name,
+                        // not as the actual document type alias.
+                        // For more info: http://issues.umbraco.org/issue/U4-11059
                         if (ctSave.DefaultTemplate != template.Alias)
                         {
                             var allowedTemplates = ctSave.AllowedTemplates.ToArray();
@@ -319,7 +319,7 @@ namespace Umbraco.Web.Editors
                             ctSave.AllowedTemplates = allowedTemplates;
                         }
 
-                        //make sure the template alias is set on the default and allowed template so we can map it back	
+                        //make sure the template alias is set on the default and allowed template so we can map it back
                         ctSave.DefaultTemplate = template.Alias;
 
                     }
@@ -328,7 +328,7 @@ namespace Umbraco.Web.Editors
             var display = Mapper.Map<DocumentTypeDisplay>(savedCt);
 
             display.AddSuccessNotification(
-                            Services.TextService.Localize("speechBubbles/contentTypeSavedHeader"),
+                            Services.TextService.Localize("speechBubbles", "contentTypeSavedHeader"),
                             string.Empty);
 
             return display;
@@ -576,43 +576,57 @@ namespace Umbraco.Web.Editors
             var fileName = file.Headers.ContentDisposition.FileName.Trim(Constants.CharArrays.DoubleQuote);
             var ext = fileName.Substring(fileName.LastIndexOf('.') + 1).ToLower();
 
-            var destFileName = root + "\\" + fileName;
-            try
+            var destFileName = Path.Combine(root, fileName);
+            if (Path.GetFullPath(destFileName).StartsWith(Path.GetFullPath(root)))
             {
-                // due to a bug before 8.7.0 we didn't delete temp files, so we need to make sure to delete before
-                // moving else you get errors and the upload fails without a message in the UI (there's a JS error)
-                if(System.IO.File.Exists(destFileName))
-                    System.IO.File.Delete(destFileName);
-
-                // renaming the file because MultipartFormDataStreamProvider has created a random fileName instead of using the name from the
-                // content-disposition for more than 6 years now. Creating a CustomMultipartDataStreamProvider deriving from MultipartFormDataStreamProvider
-                // seems like a cleaner option, but I'm not sure where to put it and renaming only takes one line of code.
-                System.IO.File.Move(result.FileData[0].LocalFileName, destFileName);
-            }
-            catch (Exception ex)
-            {
-                Logger.Error<ContentTypeController, string>(ex, "Error uploading udt file to App_Data: {File}", destFileName);
-            }
-
-            if (ext.InvariantEquals("udt"))
-            {
-                model.TempFileName = Path.Combine(root, fileName);
-
-                var xd = new XmlDocument
+                try
                 {
-                    XmlResolver = null
-                };
-                xd.Load(model.TempFileName);
+                    // due to a bug before 8.7.0 we didn't delete temp files, so we need to make sure to delete before
+                    // moving else you get errors and the upload fails without a message in the UI (there's a JS error)
+                    if(System.IO.File.Exists(destFileName))
+                        System.IO.File.Delete(destFileName);
 
-                model.Alias = xd.DocumentElement?.SelectSingleNode("//DocumentType/Info/Alias")?.FirstChild.Value;
-                model.Name = xd.DocumentElement?.SelectSingleNode("//DocumentType/Info/Name")?.FirstChild.Value;
+                    // renaming the file because MultipartFormDataStreamProvider has created a random fileName instead of using the name from the
+                    // content-disposition for more than 6 years now. Creating a CustomMultipartDataStreamProvider deriving from MultipartFormDataStreamProvider
+                    // seems like a cleaner option, but I'm not sure where to put it and renaming only takes one line of code.
+                    System.IO.File.Move(result.FileData[0].LocalFileName, destFileName);
+                }
+                catch (Exception ex)
+                {
+                    Logger.Error<ContentTypeController, string>(ex, "Error uploading udt file to App_Data: {File}", destFileName);
+                }
+
+                if (ext.InvariantEquals("udt"))
+                {
+                    model.TempFileName = destFileName;
+
+                    var xd = new XmlDocument
+                    {
+                        XmlResolver = null
+                    };
+                    xd.Load(model.TempFileName);
+
+                    model.Alias = xd.DocumentElement?.SelectSingleNode("//DocumentType/Info/Alias")?.FirstChild.Value;
+                    model.Name = xd.DocumentElement?.SelectSingleNode("//DocumentType/Info/Name")?.FirstChild.Value;
+                }
+                else
+                {
+                    // Cleanup the temp file
+                    System.IO.File.Delete(destFileName);
+                    model.Notifications.Add(new Notification(
+                        Services.TextService.Localize("speechBubbles", "operationFailedHeader"),
+                        Services.TextService.Localize("media", "disallowedFileType"),
+                        NotificationStyle.Warning));
+                }
             }
             else
             {
+                // Cleanup the temp file
+                System.IO.File.Delete(result.FileData[0].LocalFileName);
                 model.Notifications.Add(new Notification(
-                    Services.TextService.Localize("speechBubbles/operationFailedHeader"),
-                    Services.TextService.Localize("media/disallowedFileType"),
-                    NotificationStyle.Warning));
+                                        Services.TextService.Localize("speechBubbles", "operationFailedHeader"),
+                                        Services.TextService.Localize("media", "invalidFileName"),
+                                        NotificationStyle.Warning));
             }
 
             return model;

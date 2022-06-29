@@ -17,7 +17,6 @@ using Umbraco.Core.Models.Identity;
 using Umbraco.Core.Services;
 using Umbraco.Web.Models;
 using Umbraco.Web.Models.ContentEditing;
-using Umbraco.Web.Mvc;
 using Umbraco.Web.Security;
 using Umbraco.Web.WebApi;
 using Umbraco.Web.WebApi.Filters;
@@ -28,24 +27,38 @@ using Umbraco.Web.Composing;
 using IUser = Umbraco.Core.Models.Membership.IUser;
 using Umbraco.Web.Editors.Filters;
 using Microsoft.Owin.Security;
+using Umbraco.Core.Configuration.UmbracoSettings;
+using Umbraco.Core.Sync;
 
 namespace Umbraco.Web.Editors
 {
     /// <summary>
     /// The API controller used for editing content
     /// </summary>
-    [PluginController("UmbracoApi")]
+    [Mvc.PluginController("UmbracoApi")]
     [ValidationFilter]
     [AngularJsonOnlyConfiguration]
     [IsBackOffice]
+    [DisableBrowserCache]
     public class AuthenticationController : UmbracoApiController
     {
+        private readonly IUmbracoSettingsSection _umbracoSettingsSection;
         private BackOfficeUserManager<BackOfficeIdentityUser> _userManager;
         private BackOfficeSignInManager _signInManager;
 
-        public AuthenticationController(IGlobalSettings globalSettings, IUmbracoContextAccessor umbracoContextAccessor, ISqlContext sqlContext, ServiceContext services, AppCaches appCaches, IProfilingLogger logger, IRuntimeState runtimeState, UmbracoHelper umbracoHelper)
+        public AuthenticationController(
+            IGlobalSettings globalSettings,
+            IUmbracoContextAccessor umbracoContextAccessor,
+            ISqlContext sqlContext,
+            ServiceContext services,
+            AppCaches appCaches,
+            IProfilingLogger logger,
+            IRuntimeState runtimeState,
+            UmbracoHelper umbracoHelper,
+            IUmbracoSettingsSection umbracoSettingsSection)
             : base(globalSettings, umbracoContextAccessor, sqlContext, services, appCaches, logger, runtimeState, umbracoHelper, Current.Mapper)
         {
+            _umbracoSettingsSection = umbracoSettingsSection;
         }
 
         protected BackOfficeUserManager<BackOfficeIdentityUser> UserManager => _userManager
@@ -337,7 +350,7 @@ namespace Umbraco.Web.Editors
                         new[] { identityUser.UserName, callbackUrl });
 
                     await UserManager.SendEmailAsync(identityUser.Id,
-                        Services.TextService.Localize("login/resetPasswordEmailCopySubject",
+                        Services.TextService.Localize("login", "resetPasswordEmailCopySubject",
                             // Ensure the culture of the found user is used for the email!
                             UserExtensions.GetUserCulture(identityUser.Culture, Services.TextService, GlobalSettings)),
                         message);
@@ -552,8 +565,8 @@ namespace Umbraco.Web.Editors
                     r = code
                 });
 
-            // Construct full URL using configured application URL (which will fall back to request)
-            var applicationUri = Current.RuntimeState.ApplicationUrl;
+            // Construct full URL using configured application URL (which will fall back to current request)
+            var applicationUri = ApplicationUrlHelper.GetApplicationUriUncached(http.Request, _umbracoSettingsSection, GlobalSettings);
             var callbackUri = new Uri(applicationUri, action);
             return callbackUri.ToString();
         }

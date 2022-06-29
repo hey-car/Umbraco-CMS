@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using Umbraco.Core;
+using Umbraco.Core.Configuration.UmbracoSettings;
 using Umbraco.Core.Logging;
 using Umbraco.Core.Mapping;
 using Umbraco.Core.Models;
@@ -9,6 +10,7 @@ using Umbraco.Core.PropertyEditors;
 using Umbraco.Web.Models.ContentEditing;
 using Umbraco.Core.Services;
 using Umbraco.Core.Exceptions;
+using Umbraco.Core.Models.ContentEditing;
 
 namespace Umbraco.Web.Models.Mapping
 {
@@ -25,10 +27,11 @@ namespace Umbraco.Web.Models.Mapping
         private readonly IMediaTypeService _mediaTypeService;
         private readonly IMemberTypeService _memberTypeService;
         private readonly ILogger _logger;
+        private readonly IUmbracoSettingsSection _umbracoSettingsSection;
 
         public ContentTypeMapDefinition(CommonMapper commonMapper, PropertyEditorCollection propertyEditors, IDataTypeService dataTypeService, IFileService fileService,
             IContentTypeService contentTypeService, IMediaTypeService mediaTypeService, IMemberTypeService memberTypeService,
-            ILogger logger)
+            ILogger logger, IUmbracoSettingsSection umbracoSettingsSection)
         {
             _commonMapper = commonMapper;
             _propertyEditors = propertyEditors;
@@ -38,6 +41,7 @@ namespace Umbraco.Web.Models.Mapping
             _mediaTypeService = mediaTypeService;
             _memberTypeService = memberTypeService;
             _logger = logger;
+            _umbracoSettingsSection = umbracoSettingsSection;
         }
 
         public void DefineMaps(UmbracoMapper mapper)
@@ -83,6 +87,7 @@ namespace Umbraco.Web.Models.Mapping
         {
             MapSaveToTypeBase<DocumentTypeSave, PropertyTypeBasic>(source, target, context);
             MapComposition(source, target, alias => _contentTypeService.Get(alias));
+            MapHistoryCleanup(source, target);
 
             target.AllowedTemplates = source.AllowedTemplates
                 .Where(x => x != null)
@@ -91,6 +96,34 @@ namespace Umbraco.Web.Models.Mapping
                 .ToArray();
 
             target.SetDefaultTemplate(source.DefaultTemplate == null ? null : _fileService.GetTemplate(source.DefaultTemplate));
+        }
+
+        private static void MapHistoryCleanup(DocumentTypeSave source, IContentType target)
+        {
+            // If source history cleanup is null we don't have to map all properties
+            if (source.HistoryCleanup is null)
+            {
+                target.HistoryCleanup = null;
+                return;
+            }
+
+            // We need to reset the dirty properties, because it is otherwise true, just because the json serializer has set properties
+            target.HistoryCleanup.ResetDirtyProperties(false);
+            if (target.HistoryCleanup.PreventCleanup != source.HistoryCleanup.PreventCleanup)
+            {
+                target.HistoryCleanup.PreventCleanup = source.HistoryCleanup.PreventCleanup;
+            }
+
+            if (target.HistoryCleanup.KeepAllVersionsNewerThanDays != source.HistoryCleanup.KeepAllVersionsNewerThanDays)
+            {
+                target.HistoryCleanup.KeepAllVersionsNewerThanDays = source.HistoryCleanup.KeepAllVersionsNewerThanDays;
+            }
+
+            if (target.HistoryCleanup.KeepLatestVersionPerDayForDays !=
+                source.HistoryCleanup.KeepLatestVersionPerDayForDays)
+            {
+                target.HistoryCleanup.KeepLatestVersionPerDayForDays = source.HistoryCleanup.KeepLatestVersionPerDayForDays;
+            }
         }
 
         // no MapAll - take care
@@ -121,6 +154,16 @@ namespace Umbraco.Web.Models.Mapping
         private void Map(IContentType source, DocumentTypeDisplay target, MapperContext context)
         {
             MapTypeToDisplayBase<DocumentTypeDisplay, PropertyTypeDisplay>(source, target);
+
+            target.HistoryCleanup = new HistoryCleanupViewModel()
+            {
+                PreventCleanup = source.HistoryCleanup?.PreventCleanup ?? false,
+                KeepAllVersionsNewerThanDays = source.HistoryCleanup?.KeepAllVersionsNewerThanDays,
+                KeepLatestVersionPerDayForDays = source.HistoryCleanup?.KeepLatestVersionPerDayForDays,
+                GlobalKeepAllVersionsNewerThanDays = _umbracoSettingsSection.Content.ContentVersionCleanupPolicyGlobalSettings.KeepAllVersionsNewerThanDays,
+                GlobalKeepLatestVersionPerDayForDays = _umbracoSettingsSection.Content.ContentVersionCleanupPolicyGlobalSettings.KeepLatestVersionPerDayForDays,
+                GlobalEnableCleanup = _umbracoSettingsSection.Content.ContentVersionCleanupPolicyGlobalSettings.EnableCleanup,
+            };
 
             target.AllowCultureVariant = source.VariesByCulture();
             target.AllowSegmentVariant = source.VariesBySegment();
@@ -237,7 +280,12 @@ namespace Umbraco.Web.Models.Mapping
                 target.Id = source.Id;
 
             if (source.GroupId > 0)
-                target.PropertyGroupId = new Lazy<int>(() => source.GroupId, false);
+            {
+                if (target.PropertyGroupId?.Value != source.GroupId)
+                {
+                    target.PropertyGroupId = new Lazy<int>(() => source.GroupId, false);
+                }
+            }
 
             target.Alias = source.Alias;
             target.Description = source.Description;
@@ -300,7 +348,10 @@ namespace Umbraco.Web.Models.Mapping
         {
             if (source.Id > 0)
                 target.Id = source.Id;
+            target.Key = source.Key;
+            target.Type = source.Type;
             target.Name = source.Name;
+            target.Alias = source.Alias;
             target.SortOrder = source.SortOrder;
         }
 
@@ -309,33 +360,38 @@ namespace Umbraco.Web.Models.Mapping
         {
             if (source.Id > 0)
                 target.Id = source.Id;
+            target.Key = source.Key;
+            target.Type = source.Type;
             target.Name = source.Name;
+            target.Alias = source.Alias;
             target.SortOrder = source.SortOrder;
         }
 
         // Umbraco.Code.MapAll -ContentTypeId -ParentTabContentTypes -ParentTabContentTypeNames
         private static void Map(PropertyGroupBasic<PropertyTypeBasic> source, PropertyGroupDisplay<PropertyTypeDisplay> target, MapperContext context)
         {
+            target.Inherited = source.Inherited;
             if (source.Id > 0)
                 target.Id = source.Id;
-
-            target.Inherited = source.Inherited;
+            target.Key = source.Key;
+            target.Type = source.Type;
             target.Name = source.Name;
+            target.Alias = source.Alias;
             target.SortOrder = source.SortOrder;
-
             target.Properties = context.MapEnumerable<PropertyTypeBasic, PropertyTypeDisplay>(source.Properties);
         }
 
         // Umbraco.Code.MapAll -ContentTypeId -ParentTabContentTypes -ParentTabContentTypeNames
         private static void Map(PropertyGroupBasic<MemberPropertyTypeBasic> source, PropertyGroupDisplay<MemberPropertyTypeDisplay> target, MapperContext context)
         {
+            target.Inherited = source.Inherited;
             if (source.Id > 0)
                 target.Id = source.Id;
-
-            target.Inherited = source.Inherited;
+            target.Key = source.Key;
+            target.Type = source.Type;
             target.Name = source.Name;
+            target.Alias = source.Alias;
             target.SortOrder = source.SortOrder;
-
             target.Properties = context.MapEnumerable<MemberPropertyTypeBasic, MemberPropertyTypeDisplay>(source.Properties);
         }
 
@@ -433,6 +489,7 @@ namespace Umbraco.Web.Models.Mapping
             var destOrigProperties = target.PropertyTypes.ToArray(); // all properties, in groups or not
             var destGroups = new List<PropertyGroup>();
             var sourceGroups = source.Groups.Where(x => x.IsGenericProperties == false).ToArray();
+            var sourceGroupParentAliases = sourceGroups.Select(x => x.GetParentAlias()).Distinct().ToArray();
             foreach (var sourceGroup in sourceGroups)
             {
                 // get the dest group
@@ -444,20 +501,30 @@ namespace Umbraco.Web.Models.Mapping
                     .Select(x => MapSaveProperty(x, destOrigProperties, context))
                     .ToArray();
 
-                // if the group has no local properties, skip it, ie sort-of garbage-collect
+                // if the group has no local properties and is not used as parent, skip it, ie sort-of garbage-collect
                 // local groups which would not have local properties anymore
-                if (destProperties.Length == 0)
+                if (destProperties.Length == 0 && !sourceGroupParentAliases.Contains(sourceGroup.Alias))
                     continue;
 
                 // ensure no duplicate alias, then assign the group properties collection
                 EnsureUniqueAliases(destProperties);
-                destGroup.PropertyTypes = new PropertyTypeCollection(isPublishing, destProperties);
+
+                if (destGroup.PropertyTypes.SupportsPublishing != isPublishing || destGroup.PropertyTypes.SequenceEqual(destProperties) is false)
+                {
+                    destGroup.PropertyTypes = new PropertyTypeCollection(isPublishing, destProperties);
+                }
+
                 destGroups.Add(destGroup);
             }
 
             // ensure no duplicate name, then assign the groups collection
-            EnsureUniqueNames(destGroups);
-            target.PropertyGroups = new PropertyGroupCollection(destGroups);
+            EnsureUniqueAliases(destGroups);
+
+
+            if (target.PropertyGroups.SequenceEqual(destGroups) is false)
+            {
+                target.PropertyGroups = new PropertyGroupCollection(destGroups);
+            }
 
             // because the property groups collection was rebuilt, there is no need to remove
             // the old groups - they are just gone and will be cleared by the repository
@@ -651,22 +718,22 @@ namespace Umbraco.Web.Models.Mapping
         {
             var propertiesA = properties.ToArray();
             var distinctProperties = propertiesA
-                .Select(x => x.Alias.ToUpperInvariant())
+                .Select(x => x.Alias?.ToUpperInvariant())
                 .Distinct()
                 .Count();
             if (distinctProperties != propertiesA.Length)
                 throw new InvalidOperationException("Cannot map properties due to alias conflict.");
         }
 
-        private static void EnsureUniqueNames(IEnumerable<PropertyGroup> groups)
+        private static void EnsureUniqueAliases(IEnumerable<PropertyGroup> groups)
         {
             var groupsA = groups.ToArray();
             var distinctProperties = groupsA
-                .Select(x => x.Name.ToUpperInvariant())
+                .Select(x => x.Alias)
                 .Distinct()
                 .Count();
             if (distinctProperties != groupsA.Length)
-                throw new InvalidOperationException("Cannot map groups due to name conflict.");
+                throw new InvalidOperationException("Cannot map groups due to alias conflict.");
         }
 
         private static void MapComposition(ContentTypeSave source, IContentTypeComposition target, Func<string, IContentTypeComposition> getContentType)

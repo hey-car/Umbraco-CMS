@@ -102,5 +102,35 @@ namespace Umbraco.Core.Sync
 
             return url.TrimEnd(Constants.CharArrays.ForwardSlash);
         }
+
+        /// <summary>
+        /// Will get the application URL from configuration, if none is specified will fall back to URL from request.
+        /// </summary>
+        /// <param name="request"></param>
+        /// <param name="umbracoSettingsSection"></param>
+        /// <param name="globalSettings"></param>
+        /// <returns></returns>
+        public static Uri GetApplicationUriUncached(
+            HttpRequestBase request,
+            IUmbracoSettingsSection umbracoSettingsSection,
+            IGlobalSettings globalSettings)
+        {
+            var settingUrl = umbracoSettingsSection.WebRouting.UmbracoApplicationUrl;
+
+
+            if (string.IsNullOrEmpty(settingUrl))
+            {
+                if (!Uri.TryCreate(request.Url, VirtualPathUtility.ToAbsolute(globalSettings.Path), out var result))
+                {
+                    throw new InvalidOperationException(
+                        $"Could not create an url from {request.Url} and {globalSettings.Path}");
+                }
+                return result;
+            }
+            else
+            {
+                return new Uri(settingUrl);
+            }
+        }
     }
 }

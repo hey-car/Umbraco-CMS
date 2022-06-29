@@ -318,7 +318,6 @@ angular.module("umbraco")
             // Add items overlay menu
             // *********************************************
             $scope.openEditorOverlay = function (event, area, index, key) {
-
                 const dialog = {
                     view: "itempicker",
                     filter: area.$allowedEditors.length > 15,
@@ -668,6 +667,7 @@ angular.module("umbraco")
             $scope.removeControl = function (cell, $index) {
                 $scope.currentControl = null;
                 cell.controls.splice($index, 1);
+                currentForm.$setDirty();
             };
 
             $scope.percentage = function (spans) {
@@ -753,7 +753,7 @@ angular.module("umbraco")
                             // allowed for this template based on the current config.
 
                             _.each(found.sections, function (templateSection, index) {
-                                angular.extend($scope.model.value.sections[index], Utilities.copy(templateSection));
+                                Utilities.extend($scope.model.value.sections[index], Utilities.copy(templateSection));
                             });
 
                         }

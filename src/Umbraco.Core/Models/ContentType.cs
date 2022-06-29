@@ -1,8 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Linq;
-using System.Reflection;
 using System.Runtime.Serialization;
+using Umbraco.Core.Models.ContentEditing;
 
 namespace Umbraco.Core.Models
 {
@@ -26,6 +27,7 @@ namespace Umbraco.Core.Models
         public ContentType(int parentId) : base(parentId)
         {
             _allowedTemplates = new List<ITemplate>();
+            HistoryCleanup = new HistoryCleanup();
         }
 
 
@@ -39,6 +41,7 @@ namespace Umbraco.Core.Models
             : base(parent, alias)
         {
             _allowedTemplates = new List<ITemplate>();
+            HistoryCleanup = new HistoryCleanup();
         }
 
         /// <inheritdoc />
@@ -92,6 +95,15 @@ namespace Umbraco.Core.Models
                     DefaultTemplateId = 0;
             }
         }
+
+        private HistoryCleanup _historyCleanup;
+
+        public HistoryCleanup HistoryCleanup
+        {
+            get => _historyCleanup;
+            set => SetPropertyValueAndDetectChanges(value, ref _historyCleanup, nameof(HistoryCleanup));
+        }
+
 
         /// <summary>
         /// Determines if AllowedTemplates contains templateId
@@ -158,5 +170,15 @@ namespace Umbraco.Core.Models
 
         /// <inheritdoc />
         IContentType IContentType.DeepCloneWithResetIdentities(string newAlias) => (IContentType)DeepCloneWithResetIdentities(newAlias);
+
+
+        public override bool IsDirty()
+        {
+            bool dirtyEntity = base.IsDirty();
+
+            bool dirtyHistoryCleanup = HistoryCleanup.IsDirty();
+
+            return dirtyEntity || dirtyHistoryCleanup;
+        }
     }
 }
